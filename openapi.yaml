@@ -1,0 +1,350 @@
+# เอกสาร API ของโปรเจกต์ฝึก (สัปดาห์ 10: OpenAPI 3.0)
+# เปิดดูได้ที่ http://localhost:3000/api-docs หลัง npm start
+# กติกา: ทุก status ที่ route ตอบได้จริงต้องอยู่ใน responses และ schema ที่ใช้ซ้ำอยู่ใน components แล้วอ้างด้วย $ref
+openapi: 3.0.3
+info:
+  title: Food Order Practice API
+  description: ระบบสั่งอาหารออนไลน์ (โปรเจกต์ฝึกข้อสอบปฏิบัติ 88736065)
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+
+tags:
+  - name: Menu
+  - name: Orders
+
+paths:
+  /menu:
+    get:
+      tags: [Menu]
+      summary: ดูรายการเมนูแบบแบ่งหน้า กรอง และเรียงลำดับได้
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: available
+          in: query
+          required: false
+          schema: { type: string, enum: ["true", "false"] }
+          example: "true"
+        - name: sort
+          in: query
+          required: false
+          schema: { type: string, enum: [id, name, price], default: id }
+        - name: order
+          in: query
+          required: false
+          schema: { type: string, enum: [asc, desc], default: asc }
+      responses:
+        "200":
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MenuListResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+    post:
+      tags: [Menu]
+      summary: เพิ่มเมนูใหม่ (เฉพาะ admin)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MenuInput" }
+      responses:
+        "201":
+          description: เพิ่มสำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MenuResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /menu/{id}:
+    get:
+      tags: [Menu]
+      summary: ดูเมนูตาม id
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MenuResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Menu]
+      summary: ลบเมนู (เฉพาะ admin) ลบเมนูที่เคยถูกสั่งแล้วไม่ได้
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: ลบสำเร็จ (ไม่มี body)
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /orders:
+    get:
+      tags: [Orders]
+      summary: ดูรายการคำสั่งซื้อพร้อมยอดรวม ใหม่สุดก่อน
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderListResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+    post:
+      tags: [Orders]
+      summary: สร้างคำสั่งซื้อ (บันทึก orders และ order_items ใน transaction เดียว)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderInput" }
+      responses:
+        "201":
+          description: สร้างสำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderCreatedResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /orders/{id}:
+    get:
+      tags: [Orders]
+      summary: ดูคำสั่งซื้อพร้อมรายการอาหารและยอดรวม
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: สำเร็จ
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetailResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{id}/status:
+    patch:
+      tags: [Orders]
+      summary: เปลี่ยนสถานะคำสั่งซื้อ (staff หรือ admin)
+      description: เปลี่ยนได้ตามลำดับ pending -> preparing -> delivered หรือ pending -> cancelled เท่านั้น
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: เปลี่ยนสำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: integer, example: 3 }
+                      status: { $ref: "#/components/schemas/OrderStatus" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true # path parameter ต้อง required เสมอ
+      schema: { type: integer, minimum: 1 }
+      example: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+
+  schemas:
+    Menu:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: ข้าวผัดกุ้ง }
+        price: { type: number, example: 60 }
+        available: { type: boolean, example: true }
+    MenuInput:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string, maxLength: 200, example: ข้าวต้มปลา }
+        price: { type: number, minimum: 0.01, example: 65 }
+        available: { type: boolean, default: true }
+    MenuResponse:
+      type: object
+      properties:
+        data: { $ref: "#/components/schemas/Menu" }
+    MenuListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Menu" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 10 }
+        totalItems: { type: integer, example: 22 }
+        totalPages: { type: integer, example: 3 }
+    OrderStatus:
+      type: string
+      enum: [pending, preparing, delivered, cancelled]
+    OrderItemInput:
+      type: object
+      required: [menu_item_id, quantity]
+      properties:
+        menu_item_id: { type: integer, minimum: 1, example: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 20, example: 2 }
+    OrderInput:
+      type: object
+      required: [customer_name, items]
+      properties:
+        customer_name: { type: string, maxLength: 100, example: สมชาย }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: "#/components/schemas/OrderItemInput" }
+    OrderCreatedResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer, example: 4 }
+            customer_name: { type: string, example: สมชาย }
+            status: { $ref: "#/components/schemas/OrderStatus" }
+            total: { type: number, example: 145 }
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/OrderItemInput" }
+    OrderSummary:
+      type: object
+      properties:
+        id: { type: integer, example: 3 }
+        customer_name: { type: string, example: วิชัย }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        created_at: { type: string, format: date-time }
+        total: { type: number, example: 130 }
+    OrderListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/OrderSummary" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    OrderDetailResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            id: { type: integer, example: 1 }
+            customer_name: { type: string, example: สมชาย }
+            status: { $ref: "#/components/schemas/OrderStatus" }
+            created_at: { type: string, format: date-time }
+            total: { type: number, example: 170 }
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  menu_item_id: { type: integer, example: 1 }
+                  name: { type: string, example: ข้าวผัดกุ้ง }
+                  price: { type: number, example: 60 }
+                  quantity: { type: integer, example: 2 }
+                  subtotal: { type: number, example: 120 }
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_ERROR }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+
+  responses:
+    ValidationError:
+      description: ข้อมูลที่ส่งมาไม่ถูกต้อง (VALIDATION_ERROR)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: ไม่มี token หรือ token ไม่ถูกต้อง (NO_TOKEN, INVALID_TOKEN)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: role ไม่มีสิทธิ์ (FORBIDDEN)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: ไม่พบข้อมูล
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: ขัดกับกฎทางธุรกิจ เช่น เมนูหมด, เปลี่ยนสถานะข้ามลำดับ, ลบเมนูที่ถูกสั่งแล้ว
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
